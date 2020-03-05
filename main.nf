@@ -31,29 +31,15 @@
  * defaults parameter definitions
  */
 
+
+//singularity run docker://evolbioinfo/pastml --tree ~/CBCRG/nf_pastML/test/tree.nwk --data ~/CBCRG/nf_pastML/test/encoded.csv --columns c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17 c18 c19 c20 c21 c22 c23 c24 c25 c26 c27 c28 c29 c30 c31 c32 c33 c34 c35 c36 c37 c38 c39 c40 c41 c42 c43 c44 c45 c46 c47 c48 c49 c50 c51 c52 c53 --html_compressed ~/CBCRG/nf_pastML/test/Albanian_map.html --data_sep ,
+
 // input sequences to align in fasta format
-params.seqs = "$baseDir/data/*.fa"
-params.refs = "$baseDir/data/*.ref"
-
-// input guide trees in Newick format. Or `false` to generate trees
-//params.trees = "/users/cn/egarriga/datasets/homfam/trees/*.{FAMSA,CLUSTALO,CLUSTALO-RANDOM,MAFFT_PARTTREE}.dnd"
-params.trees =""
-
-// generate regressive alignments ?
-params.regressive_align = true
-
-// create progressive alignments ?
-params.progressive_align = true
-
-// evaluate alignments ?
-params.evaluate = true
-
-//aligner and tree generation
-tree_method = "FAMSA"
-align_method = "FAMSA"
-
-// bucket sizes for regressive algorithm
-params.buckets= '1000'
+params.alignments = "$baseDir/test/*.aln"
+//params.metadata = "$baseDir/test/*.csv"
+params.trees = "$baseDir/test/*.dnd"
+params.separator= ","
+params.predictionMethod="JOINT"
 
 // output directory
 //defined in nextflow.config
@@ -61,213 +47,76 @@ params.buckets= '1000'
 log.info """\
          F  A  M  S  A    P  i  p  e  l  i  n  e  ~  version 0.1"
          ======================================="
-         Input sequences (FASTA)                        : ${params.seqs}
-         Input references (Aligned FASTA)               : ${params.refs}
+         Input alignments (FASTA)                       : ${params.alignments}
          Input trees (NEWICK)                           : ${params.trees}
-         Alignment methods                              : ${align_method}
-         Tree methods                                   : ${tree_method}
-         Generate progressive alignments                : ${params.progressive_align}
-         Generate regressive alignments (DPA)           : ${params.regressive_align}
-         Bucket Sizes for regressive alignments         : ${params.buckets}
-         Perform evaluation? Requires reference         : ${params.evaluate}
+         Prediction Method                              : ${params.predictionMethod}
          Output directory (DIRECTORY)                   : ${params.outdir}
          """
          .stripIndent()
 
-
 // Channels containing sequences
-if ( params.seqs ) {
+if ( params.alignments ) {
   Channel
-  .fromPath(params.seqs)
-  .map { item -> [ item.baseName, item] }
-  .into { seqsCh; seqs2 }
+  .fromPath(params.alignments)
+  .map { item -> [ item.baseName.tokenize('.')[0], item] }
+  .view()
+  .set { aln }
 }
-
-if ( params.refs ) {
+/**
+if ( params.metadata ) {
   Channel
-  .fromPath(params.refs)
+  .fromPath(params.metadata)
   .map { item -> [ item.baseName, item] }
-  .set { refs }
-}
+  .set { meta }
+}**/
 
-// Channels for user provided trees or empty channel if trees are to be generated [OPTIONAL]
+// Channels for user provided trees
 if ( params.trees ) {
   Channel
     .fromPath(params.trees)
-    .map { item -> [ item.baseName.tokenize('.')[0], item.baseName.tokenize('.')[1], item] }
-    .set { trees }
-}
-else { 
-  Channel
-    .empty()
+    .map { item -> [ item.baseName.tokenize('.')[0], item] }
+    .view()
     .set { trees }
 }
 
-/*
- * GENERATE GUIDE TREES USING MEHTODS DEFINED WITH "--tree_method"
- *
- * NOTE: THIS IS ONLY IF GUIDE TREES ARE NOT PROVIDED BY THE USER
- * BY USING THE `--trees` PARAMETER
- */
+process createMetadata{
+  conda 'environment.yml'
+  tag "metadata-${id}"
+  publishDir "${params.outdir}/metadata", mode: 'copy', overwrite: true
 
-process generate_trees {
-    tag "${id}.${tree_method}"
-    publishDir "${params.outdir}/guide_trees", mode: 'copy', overwrite: true
-   
-    input:
-    set val(id), \
-         file(seqs) \
-         from seqsCh
+  input:
+    set val(id), file(alignment) from aln
 
-   output:
-     set val(id), \
-       val(tree_method), \
-       file("${id}.${tree_method}.dnd") \
-       into treesGenerated
+  output:
+    set val(id), file("${id}.csv"), file("command.txt") into metaOut
 
-   when:
-     !params.trees
+  script:
+  """
+  echo "\$(pastml.py ${alignment} ${id})"
+  """
 
-   script:
-   """
-   famsa -gt_export ${id}.${tree_method}.dnd ${seqs} ${id}.aln
-   """
 }
 
-treesGenerated
-  .mix ( trees )
-  .combine ( seqs2, by:0 )
-  .into {seqsAndTreesForRegressiveAlignment; seqsAndTreesForProgressiveAlignment }
+trees
+  .combine ( metaOut, by:0 )
+  .into { treesAndMeta; treesAndMeta2 }
 
+treesAndMeta2.view()
 
-process regressive_alignment {
-    tag "${id}"
-    publishDir "${params.outdir}/alignments", mode: 'copy', overwrite: true
+process pastML {
+    tag "pastML-${id}"
+    publishDir "${params.outdir}/pastML", mode: 'copy', overwrite: true
 
     input:
-        set val(id), \
-        val(tree_method), \
-        file(guide_tree), \
-        file(seqs) \
-        from seqsAndTreesForRegressiveAlignment
-
-      each bucket_size from params.buckets.tokenize(',')
-
-    when:
-      params.regressive_align
+    set val(id), file(tree), file(metadata), file(command) from treesAndMeta
 
     output:
-      set val(id), \
-        val("${align_method}"), \
-        val(tree_method), \
-        val("reg_align"), \
-        val(bucket_size), \
-        file("${id}.reg_align.${bucket_size}.${align_method}.with.${tree_method}.tree.aln") \
-        into regressiveOut
+    file("${id}_out.html") into pastmlOut
 
     script:
     """
-        t_coffee -reg -reg_method famsa_msa \
-         -reg_tree ${guide_tree} \
-         -seq ${seqs} \
-         -reg_nseq ${bucket_size} \
-         -reg_homoplasy \
-         -outfile ${id}.reg_align.${bucket_size}.${align_method}.with.${tree_method}.tree.aln
-    """
-}
-
-process progressive_alignment {
-    tag "${id}"
-    publishDir "${params.outdir}/alignments", mode: 'copy', overwrite: true
-
-    input:
-        set val(id), \
-        val(tree_method), \
-        file(guide_tree), \
-        file(seqs) \
-        from seqsAndTreesForProgressiveAlignment
-
-    when:
-      params.progressive_align
-
-    output:
-      set val(id), \
-        val("${align_method}"), \
-        val(tree_method), \
-        val("prog_align"), \
-        val("NA"), \
-        file("${id}.prog_align.NA.${align_method}.with.${tree_method}.tree.aln") \
-        into progressiveOut
-
-    script:
-    """
-      famsa -gt_import ${guide_tree} ${seqs} ${id}.prog_align.NA.${align_method}.with.${tree_method}.tree.aln
-    """
-}
-
-progressiveOut
-  .mix ( regressiveOut )
-  .set { all_alignments }
-
-refs
-  .cross (all_alignments )
-  .map { it -> [it[0][0], it[1][1], it[1][2], it[1][3], it[1][4], it[1][5], it[0][1]] }
-  .set { toEvaluate }
-
-process evaluation {
-    tag "${id}.${align_method}.${tree_method}.${align_type}.${bucket_size}"
-    publishDir "${params.outdir}/individual_scores", mode: 'copy', overwrite: true
-
-    input:
-      set val(id), \
-          val(align_method), \
-          val(tree_method), \
-          val(align_type), \
-          val(bucket_size), \
-          file(test_alignment), \
-          file(ref_alignment) \
-          from toEvaluate
-
-    output:
-      set val(id), \
-          val(tree_method), \
-          val(align_method), \
-          val(align_type), \
-          val(bucket_size), \
-          file("*.sp"), \
-          file("*.tc"), \
-          file("*.col") \
-          into scores
-
-    when:
-      params.evaluate
-
-     script:
-     """
-       t_coffee -other_pg aln_compare \
-             -al1 ${ref_alignment} \
-             -al2 ${test_alignment} \
-            -compare_mode sp \
-            | grep -v "seq1" | grep -v '*' | \
-            awk '{ print \$4}' ORS="\t" \
-            > "${id}.${align_type}.${bucket_size}.${align_method}.with.${tree_method}.tree.sp"
-
-       t_coffee -other_pg aln_compare \
-             -al1 ${ref_alignment} \
-             -al2 ${test_alignment} \
-            -compare_mode tc \
-            | grep -v "seq1" | grep -v '*' | \
-            awk '{ print \$4}' ORS="\t" \
-            > "${id}.${align_type}.${bucket_size}.${align_method}.with.${tree_method}.tree.tc"
-
-       t_coffee -other_pg aln_compare \
-             -al1 ${ref_alignment} \
-             -al2 ${test_alignment} \
-            -compare_mode column \
-            | grep -v "seq1" | grep -v '*' | \
-              awk '{ print \$4}' ORS="\t" \
-            > "${id}.${align_type}.${bucket_size}.${align_method}.with.${tree_method}.tree.col"
-
+    var="\$(cat ${command})"
+    pastml --tree ${tree} --data ${metadata} --data_sep ${params.separator} --columns \$var --prediction_method ${params.predictionMethod} --html_compressed ${id}_out.html 
     """
 }
 
