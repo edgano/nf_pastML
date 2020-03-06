@@ -58,8 +58,8 @@ log.info """\
 if ( params.alignments ) {
   Channel
   .fromPath(params.alignments)
-  .map { item -> [ item.baseName.tokenize('.')[0], item] }
-  .view()
+  .map { item -> [ item.baseName.tokenize('.')[0],item.baseName.tokenize('.')[3], item.baseName.tokenize('.')[5],item.baseName,item] }
+  //.view()
   .set { aln }
 }
 /**
@@ -74,8 +74,8 @@ if ( params.metadata ) {
 if ( params.trees ) {
   Channel
     .fromPath(params.trees)
-    .map { item -> [ item.baseName.tokenize('.')[0], item] }
-    .view()
+    .map { item -> [ item.baseName.tokenize('.')[0],item.baseName.tokenize('.')[1], item] }
+    //.view()
     .set { trees }
 }
 
@@ -85,20 +85,21 @@ process createMetadata{
   publishDir "${params.outdir}/metadata", mode: 'copy', overwrite: true
 
   input:
-    set val(id), file(alignment) from aln
+    set val(id),val(aln_method),val(tree_method), val(aln_tree), file(aln_file) from aln
 
   output:
-    set val(id), file("${id}.csv"), file("command.txt") into metaOut
+    set val(id), val(tree_method),val(aln_method), val(aln_tree), file("${aln_tree}.csv"), file("${aln_tree}_command.txt") into metaOut
 
   script:
   """
-  echo "\$(pastml.py ${alignment} ${id})"
+  echo "\$(pastml.py ${aln_file} ${aln_tree})"
+  mv command.txt ${aln_tree}_command.txt
   """
 
 }
 
 trees
-  .combine ( metaOut, by:0 )
+  .join ( metaOut, by:[0,1] )
   .into { treesAndMeta; treesAndMeta2 }
 
 treesAndMeta2.view()
@@ -108,15 +109,15 @@ process pastML {
     publishDir "${params.outdir}/pastML", mode: 'copy', overwrite: true
 
     input:
-    set val(id), file(tree), file(metadata), file(command) from treesAndMeta
+    set val(id), val(tree_method),val(tree_file), val(aln_method), val(aln_tree), file(metadata), file(command) from treesAndMeta
 
     output:
-    file("${id}_out.html") into pastmlOut
+    file("${aln_tree}_out.html") into pastmlOut
 
     script:
     """
     var="\$(cat ${command})"
-    pastml --tree ${tree} --data ${metadata} --data_sep ${params.separator} --columns \$var --prediction_method ${params.predictionMethod} --html_compressed ${id}_out.html 
+    pastml --tree ${tree_file} --data ${metadata} --data_sep ${params.separator} --columns \$var --prediction_method ${params.predictionMethod} --html_compressed ${aln_tree}_out.html 
     """
 }
 

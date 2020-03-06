@@ -1,0 +1,13 @@
+parameter	value
+pastml_version	1.9.24
+character	c9
+log_likelihood	-6.622855352262995
+log_likelihood_restricted_JOINT	-6.740418082128627
+method	JOINT
+model	F81
+num_nodes	164
+num_tips	93
+scaling_factor	0.4806906031808555
+state_changes_per_avg_branch	0.025162596143102404
+0	0.22173687160787853
+1	0.7782631283921215
