@@ -31,13 +31,16 @@
  * defaults parameter definitions
  */
 
+// nextflow run main.nf -profile docker
 
 //singularity run docker://evolbioinfo/pastml --tree ~/CBCRG/nf_pastML/test/tree.nwk --data ~/CBCRG/nf_pastML/test/encoded.csv --columns c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17 c18 c19 c20 c21 c22 c23 c24 c25 c26 c27 c28 c29 c30 c31 c32 c33 c34 c35 c36 c37 c38 c39 c40 c41 c42 c43 c44 c45 c46 c47 c48 c49 c50 c51 c52 c53 --html_compressed ~/CBCRG/nf_pastML/test/Albanian_map.html --data_sep ,
 
 // input sequences to align in fasta format
-params.alignments = "$baseDir/test/*.aln"
+params.alignments = "$baseDir/test/alignment/seatoxin.reg_align.1000.CLUSTALO.with.FAMSA.tree.aln"
 //params.metadata = "$baseDir/test/*.csv"
-params.trees = "$baseDir/test/*.dnd"
+params.trees = "$baseDir/test/tree/*.dnd"
+
+//parameters for pastML
 params.separator= ","
 params.predictionMethod="JOINT"
 
