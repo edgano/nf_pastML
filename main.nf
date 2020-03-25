@@ -83,7 +83,9 @@ if ( params.trees ) {
 }
 
 process createMetadata{
-  conda 'environment.yml'
+  container 'biocontainers/biopython:v1.73dfsg-1-deb-py3_cv1'
+  //container 'biopython/biopython'
+  //conda 'environment.yml'
   tag "metadata-${id}"
   publishDir "${params.outdir}/metadata", mode: 'copy', overwrite: true
 
